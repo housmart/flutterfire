@@ -200,9 +200,12 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
       NSSelectorFromString(@"application:didReceiveRemoteNotification:fetchCompletionHandler:");
   if ([[GULAppDelegateSwizzler sharedApplication].delegate
           respondsToSelector:didReceiveRemoteNotificationWithCompletionSEL]) {
+
+    NSLog(@"ここ1");
     // noop - user has own implementation of this method in their AppDelegate, this
     // means GULAppDelegateSwizzler will have already replaced it with a donor method
   } else {
+    NSLog(@"ここ1_");
     // add our own donor implementation of
     // application:didReceiveRemoteNotification:fetchCompletionHandler:
     Method donorMethod = class_getInstanceMethod(object_getClass(self),
@@ -212,16 +215,20 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
                     method_getImplementation(donorMethod), method_getTypeEncoding(donorMethod));
   }
 #else
+
+  NSLog(@"ここ1__");
   [_registrar addApplicationDelegate:self];
 #endif
 
   // Set UNUserNotificationCenter but preserve original delegate if necessary.
   if (@available(iOS 10.0, macOS 10.14, *)) {
+    NSLog(@"ここ2");
     BOOL shouldReplaceDelegate = YES;
     UNUserNotificationCenter *notificationCenter =
         [UNUserNotificationCenter currentNotificationCenter];
 
     if (notificationCenter.delegate != nil) {
+      NSLog(@"ここ3");
 #if !TARGET_OS_OSX
       // If the App delegate exists and it conforms to UNUserNotificationCenterDelegate then we
       // don't want to replace it on iOS as the earlier call to `[_registrar
@@ -238,6 +245,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
 #endif
 
       if (shouldReplaceDelegate) {
+        NSLog(@"ここ4");
         _originalNotificationCenterDelegate = notificationCenter.delegate;
         _originalNotificationCenterDelegateRespondsTo.openSettingsForNotification =
             (unsigned int)[_originalNotificationCenterDelegate
@@ -281,7 +289,6 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
          withCompletionHandler:
              (void (^)(UNNotificationPresentationOptions options))completionHandler
     API_AVAILABLE(macos(10.14), ios(10.0)) {
-  NSLog(@"ここ");
   NSDictionary *notificationDict =
       [FLTFirebaseMessagingPlugin NSDictionaryFromUNNotification:notification];
 
