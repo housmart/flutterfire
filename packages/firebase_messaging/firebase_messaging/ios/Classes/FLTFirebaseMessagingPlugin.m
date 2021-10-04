@@ -338,6 +338,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
   [_channel invokeMethod:@"Messaging#onMessageOpenedApp" arguments:notificationDict];
   NSLog(@"4");
   @synchronized(self) {
+    NSLog(@"4__");
     _initialNotification = notificationDict;
   }
   NSLog(@"5");
