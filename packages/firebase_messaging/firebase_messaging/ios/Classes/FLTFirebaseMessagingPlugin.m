@@ -321,23 +321,29 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
     didReceiveNotificationResponse:(UNNotificationResponse *)response
              withCompletionHandler:(void (^)(void))completionHandler
     API_AVAILABLE(macos(10.14), ios(10.0)) {
-  NSLog(@"ここ");
+  NSLog(@"1");
   NSDictionary *remoteNotification = response.notification.request.content.userInfo;
+  NSLog(@"2");
   // We only want to handle FCM notifications.
   NSDictionary *notificationDict =
       [FLTFirebaseMessagingPlugin remoteMessageUserInfoToDict:remoteNotification];
+  NSLog(@"3");
   [_channel invokeMethod:@"Messaging#onMessageOpenedApp" arguments:notificationDict];
+  NSLog(@"4");
   @synchronized(self) {
     _initialNotification = notificationDict;
   }
+  NSLog(@"5");
 
   // Forward on to any other delegates.
   if (_originalNotificationCenterDelegate != nil &&
       _originalNotificationCenterDelegateRespondsTo.didReceiveNotificationResponse) {
+    NSLog(@"6");
     [_originalNotificationCenterDelegate userNotificationCenter:center
                                  didReceiveNotificationResponse:response
                                           withCompletionHandler:completionHandler];
   } else {
+    NSLog(@"7");
     completionHandler();
   }
 }
