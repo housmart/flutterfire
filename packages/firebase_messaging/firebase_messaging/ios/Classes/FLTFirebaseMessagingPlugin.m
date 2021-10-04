@@ -281,6 +281,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
          withCompletionHandler:
              (void (^)(UNNotificationPresentationOptions options))completionHandler
     API_AVAILABLE(macos(10.14), ios(10.0)) {
+  NSLog(@"ここ");
   NSDictionary *notificationDict =
       [FLTFirebaseMessagingPlugin NSDictionaryFromUNNotification:notification];
 
