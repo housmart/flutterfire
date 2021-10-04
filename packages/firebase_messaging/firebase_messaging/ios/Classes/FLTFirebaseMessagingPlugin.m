@@ -414,66 +414,61 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
     return YES;
   }
 #endif
+  NSDictionary *notificationDict =
+      [FLTFirebaseMessagingPlugin remoteMessageUserInfoToDict:userInfo];
 
-  // Only handle notifications from FCM.
-  if (userInfo[@"gcm.message_id"]) {
-    NSDictionary *notificationDict =
-        [FLTFirebaseMessagingPlugin remoteMessageUserInfoToDict:userInfo];
+  if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
+    __block BOOL completed = NO;
 
-    if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground) {
-      __block BOOL completed = NO;
-
-      // If app is in background state, register background task to guarantee async queues aren't
-      // frozen.
-      UIBackgroundTaskIdentifier __block backgroundTaskId =
-          [application beginBackgroundTaskWithExpirationHandler:^{
-            @synchronized(self) {
-              if (completed == NO) {
-                completed = YES;
-                completionHandler(UIBackgroundFetchResultNewData);
-                if (backgroundTaskId != UIBackgroundTaskInvalid) {
-                  [application endBackgroundTask:backgroundTaskId];
-                  backgroundTaskId = UIBackgroundTaskInvalid;
-                }
+    // If app is in background state, register background task to guarantee async queues aren't
+    // frozen.
+    UIBackgroundTaskIdentifier __block backgroundTaskId =
+        [application beginBackgroundTaskWithExpirationHandler:^{
+          @synchronized(self) {
+            if (completed == NO) {
+              completed = YES;
+              completionHandler(UIBackgroundFetchResultNewData);
+              if (backgroundTaskId != UIBackgroundTaskInvalid) {
+                [application endBackgroundTask:backgroundTaskId];
+                backgroundTaskId = UIBackgroundTaskInvalid;
               }
             }
-          }];
+          }
+        }];
 
-      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25 * NSEC_PER_SEC)),
-                     dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-                       @synchronized(self) {
-                         if (completed == NO) {
-                           completed = YES;
-                           completionHandler(UIBackgroundFetchResultNewData);
-                           if (backgroundTaskId != UIBackgroundTaskInvalid) {
-                             [application endBackgroundTask:backgroundTaskId];
-                             backgroundTaskId = UIBackgroundTaskInvalid;
-                           }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+                     @synchronized(self) {
+                       if (completed == NO) {
+                         completed = YES;
+                         completionHandler(UIBackgroundFetchResultNewData);
+                         if (backgroundTaskId != UIBackgroundTaskInvalid) {
+                           [application endBackgroundTask:backgroundTaskId];
+                           backgroundTaskId = UIBackgroundTaskInvalid;
                          }
                        }
-                     });
+                     }
+                   });
 
-      [_channel invokeMethod:@"Messaging#onBackgroundMessage"
-                   arguments:notificationDict
-                      result:^(id _Nullable result) {
-                        @synchronized(self) {
-                          if (completed == NO) {
-                            completed = YES;
-                            completionHandler(UIBackgroundFetchResultNewData);
-                            if (backgroundTaskId != UIBackgroundTaskInvalid) {
-                              [application endBackgroundTask:backgroundTaskId];
-                              backgroundTaskId = UIBackgroundTaskInvalid;
-                            }
+    [_channel invokeMethod:@"Messaging#onBackgroundMessage"
+                 arguments:notificationDict
+                    result:^(id _Nullable result) {
+                      @synchronized(self) {
+                        if (completed == NO) {
+                          completed = YES;
+                          completionHandler(UIBackgroundFetchResultNewData);
+                          if (backgroundTaskId != UIBackgroundTaskInvalid) {
+                            [application endBackgroundTask:backgroundTaskId];
+                            backgroundTaskId = UIBackgroundTaskInvalid;
                           }
                         }
-                      }];
-    } else {
-      [_channel invokeMethod:@"Messaging#onMessage" arguments:notificationDict];
-      completionHandler(UIBackgroundFetchResultNoData);
-    }
+                      }
+                    }];
+  } else {
+    [_channel invokeMethod:@"Messaging#onMessage" arguments:notificationDict];
+    completionHandler(UIBackgroundFetchResultNoData);
+  }
 
-    return YES;
-  }  // if (userInfo[@"gcm.message_id"])
   return YES;
 }  // didReceiveRemoteNotification
 #endif
