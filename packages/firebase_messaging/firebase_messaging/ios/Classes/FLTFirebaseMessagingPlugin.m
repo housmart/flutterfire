@@ -321,6 +321,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
     didReceiveNotificationResponse:(UNNotificationResponse *)response
              withCompletionHandler:(void (^)(void))completionHandler
     API_AVAILABLE(macos(10.14), ios(10.0)) {
+  NSLog(@"ここ");
   NSDictionary *remoteNotification = response.notification.request.content.userInfo;
   // We only want to handle FCM notifications.
   NSDictionary *notificationDict =
