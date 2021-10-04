@@ -281,16 +281,13 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
          withCompletionHandler:
              (void (^)(UNNotificationPresentationOptions options))completionHandler
     API_AVAILABLE(macos(10.14), ios(10.0)) {
-  // We only want to handle FCM notifications.
-  if (notification.request.content.userInfo[@"gcm.message_id"]) {
-    NSDictionary *notificationDict =
-        [FLTFirebaseMessagingPlugin NSDictionaryFromUNNotification:notification];
+  NSDictionary *notificationDict =
+      [FLTFirebaseMessagingPlugin NSDictionaryFromUNNotification:notification];
 
-    // Don't send an event if contentAvailable is true - application:didReceiveRemoteNotification
-    // will send the event for us, we don't want to duplicate them.
-    if (!notificationDict[@"contentAvailable"]) {
-      [_channel invokeMethod:@"Messaging#onMessage" arguments:notificationDict];
-    }
+  // Don't send an event if contentAvailable is true - application:didReceiveRemoteNotification
+  // will send the event for us, we don't want to duplicate them.
+  if (!notificationDict[@"contentAvailable"]) {
+    [_channel invokeMethod:@"Messaging#onMessage" arguments:notificationDict];
   }
 
   // Forward on to any other delegates amd allow them to control presentation behavior.
