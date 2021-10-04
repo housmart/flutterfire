@@ -334,6 +334,9 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
   // We only want to handle FCM notifications.
   NSDictionary *notificationDict =
       [FLTFirebaseMessagingPlugin remoteMessageUserInfoToDict:remoteNotification];
+  for(NSString *key in [notificationDict allKeys]) {
+    NSLog(@"%@", notificationDict[key]);
+  }
   NSLog(@"3");
   [_channel invokeMethod:@"Messaging#onMessageOpenedApp" arguments:notificationDict];
   NSLog(@"4");
