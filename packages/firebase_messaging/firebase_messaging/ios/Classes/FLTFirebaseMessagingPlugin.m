@@ -474,7 +474,7 @@ NSString *const kMessagingPresentationOptionsUserDefaults =
 
     return YES;
   }  // if (userInfo[@"gcm.message_id"])
-  return NO;
+  return YES;
 }  // didReceiveRemoteNotification
 #endif
 
