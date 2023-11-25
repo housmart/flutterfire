@@ -2,43 +2,21 @@ name: firebase_auth_example
 description: Demonstrates how to use the firebase_auth plugin.
 
 environment:
-  sdk: ">=2.12.0 <3.0.0"
+  sdk: '>=2.18.0 <4.0.0'
 
 dependencies:
-  firebase_auth:
-    path: ../
-  firebase_core:
-    path: ../../../firebase_core/firebase_core
-  firebase_dynamic_links:
-    path: ../../../firebase_dynamic_links
+  barcode_widget: ^2.0.4
+  firebase_auth: ^4.14.1
+  firebase_core: ^2.23.0
+  firebase_messaging: ^14.7.5
   flutter:
     sdk: flutter
-  flutter_signin_button: ^1.0.0
-# Removed google_sign_in plugin temporarily until CI is fixed
-#  google_sign_in: ^5.0.0-nullsafety
-
-dependency_overrides:
-  firebase_auth:
-    path: ../
-  firebase_auth_platform_interface:
-    path: ../../firebase_auth_platform_interface
-  firebase_auth_web:
-    path: ../../firebase_auth_web
-  firebase_core:
-    path: ../../../firebase_core/firebase_core
-  firebase_core_platform_interface:
-    path: ../../../firebase_core/firebase_core_platform_interface
-  firebase_core_web:
-    path: ../../../firebase_core/firebase_core_web
-  firebase_dynamic_links:
-    path: ../../../firebase_dynamic_links
+  flutter_signin_button: ^2.0.0
+  google_sign_in: ^6.1.0
+  google_sign_in_dartio: ^0.2.2+1 # For Windows support
 
 dev_dependencies:
-  drive: 0.1.0
-  flutter_driver:
-    sdk: flutter
-  http: ^0.13.0
-  test: any
+  http: ^0.13.3
 
 flutter:
   uses-material-design: true

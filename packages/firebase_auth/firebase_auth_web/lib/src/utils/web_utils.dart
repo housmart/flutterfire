@@ -3,18 +3,54 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:io';
+import 'package:js/js_util.dart';
+
 import 'package:firebase_auth_platform_interface/firebase_auth_platform_interface.dart';
+import 'package:firebase_auth_web/firebase_auth_web.dart';
+import 'package:firebase_auth_web/src/firebase_auth_web_multi_factor.dart';
 import 'package:firebase_core_web/firebase_core_web_interop.dart'
     as core_interop;
 
 import '../interop/auth.dart' as auth_interop;
+import '../interop/multi_factor.dart' as multi_factor_interop;
+import '../interop/window_interop.dart' as window_interop;
+
+/// Workaround test to check whether `e` is practically a FirebaseError.
+///
+/// Ideally we'd check whether `e instanceof FirebaseError` however
+/// there are two definitions of `FirebaseError` in deployed apps, one from
+/// `firebase-auth.js` (which is usually minified) and one from
+/// `firebase-app.js`.
+///
+/// Because they are not the same, the instanceof check fails. Instead, we test
+/// that it is a window.Error (since that's the base class of FirebaseError) and
+/// we check that it defines "customData" property which is on the AuthError but not the FirebaseError it extends
+bool _isFirebaseAuthError(Object e) =>
+    instanceof(e, window_interop.errorConstructor) &&
+    hasProperty(e, 'customData');
+
+bool _hasFirebaseAuthErrorCodeAndMessage(Object e) {
+  if (_isFirebaseAuthError(e)) {
+    String? code = getProperty(e, 'code');
+    String? message = getProperty(e, 'message');
+    if (code == null || !code.startsWith('auth/')) return false;
+    if (message == null || !message.contains('Firebase')) return false;
+    return true;
+  } else {
+    return false;
+  }
+}
 
 /// Given a web error, an [Exception] is returned.
 ///
 /// The firebase-dart wrapper exposes a [core_interop.FirebaseError], allowing us to
 /// use the code and message and convert it into an expected [FirebaseAuthException].
-FirebaseAuthException getFirebaseAuthException(Object exception) {
-  if (exception is! core_interop.FirebaseError) {
+FirebaseAuthException getFirebaseAuthException(
+  Object exception, [
+  auth_interop.Auth? auth,
+]) {
+  if (!_hasFirebaseAuthErrorCodeAndMessage(exception)) {
     return FirebaseAuthException(
       code: 'unknown',
       message: 'An unknown error occurred: $exception',
@@ -22,24 +58,79 @@ FirebaseAuthException getFirebaseAuthException(Object exception) {
   }
 
   auth_interop.AuthError firebaseError = exception as auth_interop.AuthError;
-
   String code = firebaseError.code.replaceFirst('auth/', '');
-  String message =
-      firebaseError.message.replaceFirst('(${firebaseError.code})', '');
+  String message = firebaseError.message
+      .replaceFirst(' (${firebaseError.code}).', '')
+      .replaceFirst('Firebase: ', '');
 
-  auth_interop.AuthCredential firebaseAuthCredential = firebaseError.credential;
-  AuthCredential? credential =
-      firebaseAuthCredential is auth_interop.OAuthCredential
-          ? convertWebOAuthCredential(firebaseAuthCredential)
-          : convertWebAuthCredential(firebaseAuthCredential);
+  // "customData" - see Firebase AuthError docs: https://firebase.google.com/docs/reference/js/auth.autherror
+  final customData =
+      getProperty(exception, 'customData') as auth_interop.AuthErrorCustomData;
+
+  if (code == 'multi-factor-auth-required') {
+    final _auth = auth;
+    if (_auth == null) {
+      throw ArgumentError(
+        'Multi-factor authentication is required, but the auth instance is null. '
+        'Please ensure that the auth instance is not null before calling '
+        '`getFirebaseAuthException()`.',
+      );
+    }
+    final resolverWeb = multi_factor_interop.getMultiFactorResolver(
+      _auth,
+      exception,
+    );
+
+    return FirebaseAuthMultiFactorExceptionPlatform(
+      code: code,
+      message: message,
+      email: customData.email,
+      phoneNumber: customData.phoneNumber,
+      tenantId: customData.tenantId,
+      resolver: MultiFactorResolverWeb(
+        resolverWeb.hints.map((e) {
+          if (e is multi_factor_interop.PhoneMultiFactorInfo) {
+            return PhoneMultiFactorInfo(
+              displayName: e.displayName,
+              factorId: e.factorId,
+              enrollmentTimestamp:
+                  HttpDate.parse(e.enrollmentTime).millisecondsSinceEpoch /
+                      1000,
+              uid: e.uid,
+              phoneNumber: e.phoneNumber,
+            );
+          } else if (e is multi_factor_interop.TotpMultiFactorInfo) {
+            return TotpMultiFactorInfo(
+              displayName: e.displayName,
+              factorId: e.factorId,
+              enrollmentTimestamp:
+                  HttpDate.parse(e.enrollmentTime).millisecondsSinceEpoch /
+                      1000,
+              uid: e.uid,
+            );
+          }
+          return MultiFactorInfo(
+            displayName: e.displayName,
+            factorId: e.factorId,
+            enrollmentTimestamp:
+                HttpDate.parse(e.enrollmentTime).millisecondsSinceEpoch / 1000,
+            uid: e.uid,
+          );
+        }).toList(),
+        MultiFactorSessionWeb('web', resolverWeb.session),
+        FirebaseAuthWeb.instance,
+        resolverWeb,
+        auth,
+      ),
+    );
+  }
 
   return FirebaseAuthException(
     code: code,
     message: message,
-    email: firebaseError.email,
-    credential: credential,
-    phoneNumber: firebaseError.phoneNumber,
-    tenantId: firebaseError.tenantId,
+    email: customData.email,
+    phoneNumber: customData.phoneNumber,
+    tenantId: customData.tenantId,
   );
 }
 
@@ -50,10 +141,13 @@ ActionCodeInfo? convertWebActionCodeInfo(
     return null;
   }
 
-  return ActionCodeInfo(operation: 0, data: <String, dynamic>{
-    'email': webActionCodeInfo.data.email,
-    'previousEmail': webActionCodeInfo.data.previousEmail,
-  });
+  return ActionCodeInfo(
+    operation: ActionCodeInfoOperation.passwordReset,
+    data: ActionCodeInfoData(
+      email: webActionCodeInfo.data.email,
+      previousEmail: webActionCodeInfo.data.previousEmail,
+    ),
+  );
 }
 
 /// Converts a [auth_interop.AdditionalUserInfo] into a [AdditionalUserInfo].
@@ -76,16 +170,17 @@ AdditionalUserInfo? convertWebAdditionalUserInfo(
 IdTokenResult convertWebIdTokenResult(
   auth_interop.IdTokenResult webIdTokenResult,
 ) {
-  return IdTokenResult(<String, dynamic>{
-    'claims': webIdTokenResult.claims,
-    'expirationTimestamp':
-        webIdTokenResult.expirationTime.millisecondsSinceEpoch,
-    'issuedAtTimestamp': webIdTokenResult.issuedAtTime.millisecondsSinceEpoch,
-    'authTimestamp': webIdTokenResult.authTime.millisecondsSinceEpoch,
-    'signInProvider': webIdTokenResult.signInProvider,
-    'signInSecondFactor': null,
-    'token': webIdTokenResult.token,
-  });
+  return IdTokenResult(
+    PigeonIdTokenResult(
+      claims: webIdTokenResult.claims,
+      token: webIdTokenResult.token,
+      authTimestamp: webIdTokenResult.authTime.millisecondsSinceEpoch,
+      issuedAtTimestamp: webIdTokenResult.issuedAtTime.millisecondsSinceEpoch,
+      expirationTimestamp:
+          webIdTokenResult.expirationTime.millisecondsSinceEpoch,
+      signInProvider: webIdTokenResult.signInProvider,
+    ),
+  );
 }
 
 /// Converts a [ActionCodeSettings] into a [auth_interop.ActionCodeSettings].
@@ -97,10 +192,20 @@ auth_interop.ActionCodeSettings? convertPlatformActionCodeSettings(
 
   Map<String, dynamic> actionCodeSettingsMap = actionCodeSettings.asMap();
 
-  auth_interop.ActionCodeSettings webActionCodeSettings =
-      auth_interop.ActionCodeSettings(
-          url: actionCodeSettings.url,
-          handleCodeInApp: actionCodeSettings.handleCodeInApp);
+  auth_interop.ActionCodeSettings webActionCodeSettings;
+
+  if (actionCodeSettings.dynamicLinkDomain != null) {
+    webActionCodeSettings = auth_interop.ActionCodeSettings(
+      url: actionCodeSettings.url,
+      handleCodeInApp: actionCodeSettings.handleCodeInApp,
+      dynamicLinkDomain: actionCodeSettings.dynamicLinkDomain,
+    );
+  } else {
+    webActionCodeSettings = auth_interop.ActionCodeSettings(
+      url: actionCodeSettings.url,
+      handleCodeInApp: actionCodeSettings.handleCodeInApp,
+    );
+  }
 
   if (actionCodeSettingsMap['android'] != null) {
     webActionCodeSettings.android = auth_interop.AndroidSettings(
@@ -115,19 +220,6 @@ auth_interop.ActionCodeSettings? convertPlatformActionCodeSettings(
   }
 
   return webActionCodeSettings;
-}
-
-/// Converts a [Persistence] enum into a web string persistence value.
-String convertPlatformPersistence(Persistence persistence) {
-  switch (persistence) {
-    case Persistence.SESSION:
-      return 'session';
-    case Persistence.NONE:
-      return 'none';
-    case Persistence.LOCAL:
-    default:
-      return 'local';
-  }
 }
 
 /// Converts a [AuthProvider] into a [auth_interop.AuthProvider].
@@ -147,6 +239,15 @@ auth_interop.AuthProvider convertPlatformAuthProvider(
     return facebookAuthProvider;
   }
 
+  if (authProvider is AppleAuthProvider) {
+    auth_interop.OAuthProvider oAuthProvider =
+        auth_interop.OAuthProvider(authProvider.providerId);
+
+    authProvider.scopes.forEach(oAuthProvider.addScope);
+    oAuthProvider.setCustomParameters(authProvider.parameters);
+    return oAuthProvider;
+  }
+
   if (authProvider is GithubAuthProvider) {
     auth_interop.GithubAuthProvider githubAuthProvider =
         auth_interop.GithubAuthProvider();
@@ -163,6 +264,24 @@ auth_interop.AuthProvider convertPlatformAuthProvider(
     authProvider.scopes.forEach(googleAuthProvider.addScope);
     googleAuthProvider.setCustomParameters(authProvider.parameters);
     return googleAuthProvider;
+  }
+
+  if (authProvider is MicrosoftAuthProvider) {
+    auth_interop.OAuthProvider oAuthProvider =
+        auth_interop.OAuthProvider(authProvider.providerId);
+
+    authProvider.scopes.forEach(oAuthProvider.addScope);
+    oAuthProvider.setCustomParameters(authProvider.parameters);
+    return oAuthProvider;
+  }
+
+  if (authProvider is YahooAuthProvider) {
+    auth_interop.OAuthProvider oAuthProvider =
+        auth_interop.OAuthProvider(authProvider.providerId);
+
+    authProvider.scopes.forEach(oAuthProvider.addScope);
+    oAuthProvider.setCustomParameters(authProvider.parameters);
+    return oAuthProvider;
   }
 
   if (authProvider is TwitterAuthProvider) {
@@ -186,7 +305,11 @@ auth_interop.AuthProvider convertPlatformAuthProvider(
     return oAuthProvider;
   }
 
-  throw FallThroughError();
+  if (authProvider is SAMLAuthProvider) {
+    return auth_interop.SAMLAuthProvider(authProvider.providerId);
+  }
+
+  throw UnsupportedError('Unknown AuthProvider: $authProvider.');
 }
 
 /// Converts a [auth_interop.AuthCredential] into a [AuthCredential].
@@ -204,16 +327,25 @@ AuthCredential? convertWebAuthCredential(
 
 /// Converts a [auth_interop.OAuthCredential] into a [AuthCredential].
 AuthCredential? convertWebOAuthCredential(
-  auth_interop.OAuthCredential? oAuthCredential,
+  auth_interop.UserCredential? userCredential,
 ) {
-  if (oAuthCredential == null) {
+  if (userCredential == null) {
     return null;
   }
 
-  return OAuthProvider(oAuthCredential.providerId).credential(
-    accessToken: oAuthCredential.accessToken,
-    secret: oAuthCredential.secret,
-    idToken: oAuthCredential.idToken,
+  final authCredential = auth_interop.OAuthProvider.credentialFromResult(
+    userCredential.jsObject,
+  );
+
+  if (authCredential == null) {
+    return null;
+  }
+
+  return OAuthProvider(authCredential.providerId).credential(
+    signInMethod: authCredential.signInMethod,
+    accessToken: authCredential.accessToken,
+    secret: authCredential.secret,
+    idToken: authCredential.idToken,
   );
 }
 
@@ -250,13 +382,6 @@ auth_interop.OAuthCredential? convertPlatformCredential(
     );
   }
 
-  if (credential is OAuthCredential) {
-    return auth_interop.OAuthProvider(credential.providerId).credential(
-      credential.idToken,
-      credential.accessToken,
-    );
-  }
-
   if (credential is TwitterAuthCredential) {
     return auth_interop.TwitterAuthProvider.credential(
       credential.accessToken!,
@@ -268,14 +393,18 @@ auth_interop.OAuthCredential? convertPlatformCredential(
     return auth_interop.PhoneAuthProvider.credential(
       credential.verificationId!,
       credential.smsCode!,
-    );
+    ) as auth_interop.OAuthCredential;
   }
 
   if (credential is OAuthCredential) {
-    return auth_interop.OAuthProvider(credential.providerId).credential(
-      credential.idToken,
-      credential.accessToken,
+    auth_interop.OAuthCredentialOptions credentialOptions =
+        auth_interop.OAuthCredentialOptions(
+      accessToken: credential.accessToken,
+      rawNonce: credential.rawNonce,
+      idToken: credential.idToken,
     );
+    return auth_interop.OAuthProvider(credential.providerId)
+        .credential(credentialOptions);
   }
 
   return null;
@@ -301,4 +430,10 @@ String convertRecaptchaVerifierTheme(RecaptchaVerifierTheme theme) {
     default:
       return 'light';
   }
+}
+
+/// Converts a [multi_factor_interop.MultiFactorSession] into a [MultiFactorSession].
+MultiFactorSession convertMultiFactorSession(
+    multi_factor_interop.MultiFactorSession multiFactorSession) {
+  return MultiFactorSessionWeb('web', multiFactorSession);
 }

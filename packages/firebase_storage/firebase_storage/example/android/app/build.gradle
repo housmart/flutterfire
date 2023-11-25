@@ -25,19 +25,25 @@ apply plugin: 'com.android.application'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    compileSdkVersion 29
+    namespace 'io.flutter.plugins.firebasestorageexample'
 
-    lintOptions {
-        disable 'InvalidPackage'
-    }
+    compileSdk 33
 
     defaultConfig {
         applicationId 'io.flutter.plugins.firebasestorageexample'
-        minSdkVersion 16
-        targetSdkVersion 28
+        minSdk 21
+        targetSdk 33
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
     }
 
     buildTypes {
@@ -59,5 +65,3 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
 }
-
-apply plugin: 'com.google.gms.google-services'

@@ -25,19 +25,21 @@ apply plugin: 'com.android.application'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-    compileSdkVersion 29
+    namespace 'io.flutter.plugins.firebase.functions.example'
 
-    lintOptions {
-        disable 'InvalidPackage'
-    }
+    compileSdk 33
 
     defaultConfig {
         applicationId "io.flutter.plugins.firebase.functions.example"
         minSdkVersion 16
-        targetSdkVersion 28
+        targetSdkVersion 33
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    lint {
+      disable 'InvalidPackage'
     }
 
     buildTypes {
@@ -59,5 +61,3 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
 }
-
-apply plugin: 'com.google.gms.google-services'

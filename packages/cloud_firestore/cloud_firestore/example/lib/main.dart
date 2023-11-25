@@ -2,21 +2,26 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'package:cloud_firestore_example/movie.dart';
-import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+
+import 'firebase_options.dart';
 
 /// Requires that a Firestore emulator is running locally.
 /// See https://firebase.flutter.dev/docs/firestore/usage#emulator-usage
-bool USE_FIRESTORE_EMULATOR = false;
+bool shouldUseFirestoreEmulator = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  if (USE_FIRESTORE_EMULATOR) {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+  );
+  if (shouldUseFirestoreEmulator) {
     FirebaseFirestore.instance.useFirestoreEmulator('localhost', 8080);
   }
+
   runApp(FirestoreExampleApp());
 }
 
@@ -35,7 +40,7 @@ enum MovieQuery {
   year,
   likesAsc,
   likesDesc,
-  score,
+  rated,
   sciFi,
   fantasy,
 }
@@ -45,10 +50,10 @@ extension on Query<Movie> {
   Query<Movie> queryBy(MovieQuery query) {
     switch (query) {
       case MovieQuery.fantasy:
-        return where('genre', arrayContainsAny: ['Fantasy']);
+        return where('genre', arrayContainsAny: ['fantasy']);
 
       case MovieQuery.sciFi:
-        return where('genre', arrayContainsAny: ['Sci-Fi']);
+        return where('genre', arrayContainsAny: ['sci-fi']);
 
       case MovieQuery.likesAsc:
       case MovieQuery.likesDesc:
@@ -57,8 +62,8 @@ extension on Query<Movie> {
       case MovieQuery.year:
         return orderBy('year', descending: true);
 
-      case MovieQuery.score:
-        return orderBy('score', descending: true);
+      case MovieQuery.rated:
+        return orderBy('rated', descending: true);
     }
   }
 }
@@ -107,10 +112,10 @@ class _FilmListState extends State<FilmList> {
               builder: (context, _) {
                 return Text(
                   'Latest Snapshot: ${DateTime.now()}',
-                  style: Theme.of(context).textTheme.caption,
+                  style: Theme.of(context).textTheme.bodySmall,
                 );
               },
-            )
+            ),
           ],
         ),
         actions: <Widget>[
@@ -124,8 +129,8 @@ class _FilmListState extends State<FilmList> {
                   child: Text('Sort by Year'),
                 ),
                 const PopupMenuItem(
-                  value: MovieQuery.score,
-                  child: Text('Sort by Score'),
+                  value: MovieQuery.rated,
+                  child: Text('Sort by Rated'),
                 ),
                 const PopupMenuItem(
                   value: MovieQuery.likesAsc,
@@ -137,11 +142,11 @@ class _FilmListState extends State<FilmList> {
                 ),
                 const PopupMenuItem(
                   value: MovieQuery.fantasy,
-                  child: Text('Filter genre Fantasy'),
+                  child: Text('Filter genre fantasy'),
                 ),
                 const PopupMenuItem(
                   value: MovieQuery.sciFi,
-                  child: Text('Filter genre Sci-Fi'),
+                  child: Text('Filter genre sci-fi'),
                 ),
               ];
             },
@@ -189,7 +194,12 @@ class _FilmListState extends State<FilmList> {
   }
 
   Future<void> _resetLikes() async {
-    final movies = await moviesRef.get();
+    final movies = await moviesRef.get(
+      const GetOptions(
+        serverTimestampBehavior: ServerTimestampBehavior.previous,
+      ),
+    );
+
     WriteBatch batch = FirebaseFirestore.instance.batch();
 
     for (final movie in movies.docs) {
@@ -210,9 +220,7 @@ class _MovieItem extends StatelessWidget {
   Widget get poster {
     return SizedBox(
       width: 100,
-      child: Center(
-        child: Image.network(movie.poster),
-      ),
+      child: Image.network(movie.poster),
     );
   }
 
@@ -229,7 +237,7 @@ class _MovieItem extends StatelessWidget {
           Likes(
             reference: reference,
             currentLikes: movie.likes,
-          )
+          ),
         ],
       ),
     );
@@ -247,7 +255,8 @@ class _MovieItem extends StatelessWidget {
   Widget get metadata {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -272,7 +281,7 @@ class _MovieItem extends StatelessWidget {
               style: const TextStyle(color: Colors.white),
             ),
           ),
-        )
+        ),
     ];
   }
 
@@ -291,6 +300,7 @@ class _MovieItem extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4, top: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           poster,
           Flexible(child: details),
@@ -386,5 +396,49 @@ class _LikesState extends State<Likes> {
         Text('$_likes likes'),
       ],
     );
+  }
+}
+
+@immutable
+class Movie {
+  Movie({
+    required this.genre,
+    required this.likes,
+    required this.poster,
+    required this.rated,
+    required this.runtime,
+    required this.title,
+    required this.year,
+  });
+
+  Movie.fromJson(Map<String, Object?> json)
+      : this(
+          genre: (json['genre']! as List).cast<String>(),
+          likes: json['likes']! as int,
+          poster: json['poster']! as String,
+          rated: json['rated']! as String,
+          runtime: json['runtime']! as String,
+          title: json['title']! as String,
+          year: json['year']! as int,
+        );
+
+  final String poster;
+  final int likes;
+  final String title;
+  final int year;
+  final String runtime;
+  final String rated;
+  final List<String> genre;
+
+  Map<String, Object?> toJson() {
+    return {
+      'genre': genre,
+      'likes': likes,
+      'poster': poster,
+      'rated': rated,
+      'runtime': runtime,
+      'title': title,
+      'year': year,
+    };
   }
 }

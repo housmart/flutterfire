@@ -41,7 +41,13 @@ class FirebaseAuth extends FirebasePluginPlatform {
   }
 
   /// Returns an instance using a specified [FirebaseApp].
-  factory FirebaseAuth.instanceFor({required FirebaseApp app}) {
+  factory FirebaseAuth.instanceFor({
+    required FirebaseApp app,
+    @Deprecated(
+      'Will be removed in future release. Use setPersistence() instead.',
+    )
+    Persistence? persistence,
+  }) {
     return _firebaseAuthInstances.putIfAbsent(app.name, () {
       return FirebaseAuth._(app: app);
     });
@@ -50,9 +56,9 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// Returns the current [User] if they are currently signed-in, or `null` if
   /// not.
   ///
-  /// You should not use this getter to determine the users current state,
-  /// instead use [authStateChanges], [idTokenChanges] or [userChanges] to
-  /// subscribe to updates.
+  /// This getter only provides a snapshot of user state. Applications that need
+  /// to react to changes in user state should instead use [authStateChanges],
+  /// [idTokenChanges] or [userChanges] to subscribe to updates.
   User? get currentUser {
     if (_delegate.currentUser != null) {
       return User._(this, _delegate.currentUser!);
@@ -356,25 +362,20 @@ class FirebaseAuth extends FirebasePluginPlatform {
     await _delegate.sendSignInLinkToEmail(email, actionCodeSettings);
   }
 
-  /// When set to null, the default Firebase Console language setting is
-  /// applied.
+  /// When set to null, sets the user-facing language code to be the default app language.
   ///
   /// The language code will propagate to email action templates (password
   /// reset, email verification and email change revocation), SMS templates for
   /// phone authentication, reCAPTCHA verifier and OAuth popup/redirect
   /// operations provided the specified providers support localization with the
   /// language code specified.
-  ///
-  /// On web platforms, if `null` is provided as the [languageCode] the Firebase
-  /// project default language will be used. On native platforms, the device
-  /// language will be used.
   Future<void> setLanguageCode(String? languageCode) {
     return _delegate.setLanguageCode(languageCode);
   }
 
   /// Updates the current instance with the provided settings.
   ///
-  /// [appVerificationDisabledForTesting] This setting only applies to iOS and
+  /// [appVerificationDisabledForTesting] This setting applies to Android, iOS and
   ///   web platforms. When set to `true`, this property disables app
   ///   verification for the purpose of testing phone authentication. For this
   ///   property to take effect, it needs to be set before handling a reCAPTCHA
@@ -388,27 +389,40 @@ class FirebaseAuth extends FirebasePluginPlatform {
   ///
   ///   The default value is `false` (app verification is enabled).
   ///
+  /// [forceRecaptchaFlow] This setting applies to Android only. When set to 'true',
+  ///   it forces the application verification to use the web reCAPTCHA flow for Phone Authentication.
+  ///   Once this has been called, every call to PhoneAuthProvider#verifyPhoneNumber() will skip the SafetyNet verification flow and use the reCAPTCHA flow instead.
+  ///   Calling this method a second time will overwrite the previously passed parameter.
+  ///
+  /// [phoneNumber] & [smsCode] These settings apply to Android only. The phone number and SMS code here must have been configured in the Firebase Console (Authentication > Sign In Method > Phone).
+  ///   Once this has been called, every call to PhoneAuthProvider#verifyPhoneNumber() with the same phone number as the one that is configured here will have onVerificationCompleted() triggered as the callback.
+  ///   Calling this method a second time will overwrite the previously passed parameters. Only one number can be configured at a given time.
+  ///   Calling this method with either parameter set to null removes this functionality until valid parameters are passed.
+  ///   Verifying a phone number other than the one configured here will trigger normal behavior. If the phone number is configured as a test phone number in the console, the regular testing flow occurs. Otherwise, normal phone number verification will take place.
+  ///   When this is set and PhoneAuthProvider#verifyPhoneNumber() is called with a matching phone number, PhoneAuthProvider.OnVerificationStateChangedCallbacks.onCodeAutoRetrievalTimeOut(String) will never be called.
+  ///
   /// [userAccessGroup] This setting only applies to iOS and MacOS platforms.
   ///   When set, it allows you to share authentication state between
-  ///   applications. Set the property to your team group ID or set to `null` to
-  ///   remove sharing capabilities.
+  ///   applications. Set the property to your team group ID or set to `null`
+  ///   to remove sharing capabilities.
   ///
   ///   Key Sharing capabilities must be enabled for your app via XCode (Project
   ///   settings > Capabilities). To learn more, visit the
   ///   [Apple documentation](https://developer.apple.com/documentation/security/keychain_services/keychain_items/sharing_access_to_keychain_items_among_a_collection_of_apps).
   Future<void> setSettings({
-    bool? appVerificationDisabledForTesting,
+    bool appVerificationDisabledForTesting = false,
     String? userAccessGroup,
     String? phoneNumber,
     String? smsCode,
     bool? forceRecaptchaFlow,
   }) {
     return _delegate.setSettings(
-        appVerificationDisabledForTesting: appVerificationDisabledForTesting,
-        userAccessGroup: userAccessGroup,
-        phoneNumber: phoneNumber,
-        smsCode: smsCode,
-        forceRecaptchaFlow: forceRecaptchaFlow);
+      appVerificationDisabledForTesting: appVerificationDisabledForTesting,
+      userAccessGroup: userAccessGroup,
+      phoneNumber: phoneNumber,
+      smsCode: smsCode,
+      forceRecaptchaFlow: forceRecaptchaFlow,
+    );
   }
 
   /// Changes the current type of persistence on the current Auth instance for
@@ -492,10 +506,16 @@ class FirebaseAuth extends FirebasePluginPlatform {
   ///  - Thrown if the credential is a [PhoneAuthProvider.credential] and the
   ///    verification ID of the credential is not valid.id.
   Future<UserCredential> signInWithCredential(AuthCredential credential) async {
-    return UserCredential._(
-      this,
-      await _delegate.signInWithCredential(credential),
-    );
+    try {
+      return UserCredential._(
+        this,
+        await _delegate.signInWithCredential(credential),
+      );
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Tries to sign in a user with a given custom token.
@@ -519,7 +539,14 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// - **invalid-custom-token**:
   ///  - Thrown if the custom token format is incorrect.
   Future<UserCredential> signInWithCustomToken(String token) async {
-    return UserCredential._(this, await _delegate.signInWithCustomToken(token));
+    try {
+      return UserCredential._(
+          this, await _delegate.signInWithCustomToken(token));
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Attempts to sign in a user with the given email address and password.
@@ -545,10 +572,16 @@ class FirebaseAuth extends FirebasePluginPlatform {
     required String email,
     required String password,
   }) async {
-    return UserCredential._(
-      this,
-      await _delegate.signInWithEmailAndPassword(email, password),
-    );
+    try {
+      return UserCredential._(
+        this,
+        await _delegate.signInWithEmailAndPassword(email, password),
+      );
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Signs in using an email address and email sign-in link.
@@ -570,16 +603,55 @@ class FirebaseAuth extends FirebasePluginPlatform {
     required String email,
     required String emailLink,
   }) async {
-    return UserCredential._(
-      this,
-      await _delegate.signInWithEmailLink(email, emailLink),
-    );
+    try {
+      return UserCredential._(
+        this,
+        await _delegate.signInWithEmailLink(email, emailLink),
+      );
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Signs in with an AuthProvider using native authentication flow. This is
+  /// deprecated in favor of `signInWithProvider()`.
+  ///
+  /// A [FirebaseAuthException] maybe thrown with the following error code:
+  /// - **user-disabled**:
+  ///  - Thrown if the user corresponding to the given email has been disabled.
+  @Deprecated('You should use signInWithProvider instead')
+  Future<UserCredential> signInWithAuthProvider(
+    AuthProvider provider,
+  ) async {
+    return signInWithProvider(provider);
+  }
+
+  /// Signs in with an AuthProvider using native authentication flow.
+  ///
+  /// A [FirebaseAuthException] maybe thrown with the following error code:
+  /// - **user-disabled**:
+  ///  - Thrown if the user corresponding to the given email has been disabled.
+  Future<UserCredential> signInWithProvider(
+    AuthProvider provider,
+  ) async {
+    try {
+      return UserCredential._(
+        this,
+        await _delegate.signInWithProvider(provider),
+      );
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Starts a sign-in flow for a phone number.
   ///
   /// You can optionally provide a [RecaptchaVerifier] instance to control the
-  /// reCAPTCHA widget apperance and behaviour.
+  /// reCAPTCHA widget appearance and behavior.
   ///
   /// Once the reCAPTCHA verification has completed, called [ConfirmationResult.confirm]
   /// with the users SMS verification code to complete the authentication flow.
@@ -590,12 +662,16 @@ class FirebaseAuth extends FirebasePluginPlatform {
     RecaptchaVerifier? verifier,
   ]) async {
     assert(phoneNumber.isNotEmpty);
-
-    verifier ??= RecaptchaVerifier();
-    return ConfirmationResult._(
-      this,
-      await _delegate.signInWithPhoneNumber(phoneNumber, verifier.delegate),
-    );
+    // If we add a recaptcha to the page by creating a new instance, we must
+    // also clear that instance before proceeding.
+    bool mustClear = verifier == null;
+    verifier ??= RecaptchaVerifier(auth: _delegate);
+    final result =
+        await _delegate.signInWithPhoneNumber(phoneNumber, verifier.delegate);
+    if (mustClear) {
+      verifier.clear();
+    }
+    return ConfirmationResult._(this, result);
   }
 
   /// Authenticates a Firebase client using a popup-based OAuth authentication
@@ -606,7 +682,13 @@ class FirebaseAuth extends FirebasePluginPlatform {
   ///
   /// This method is only available on web based platforms.
   Future<UserCredential> signInWithPopup(AuthProvider provider) async {
-    return UserCredential._(this, await _delegate.signInWithPopup(provider));
+    try {
+      return UserCredential._(this, await _delegate.signInWithPopup(provider));
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Authenticates a Firebase client using a full-page redirect flow.
@@ -614,7 +696,13 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// To handle the results and errors for this operation, refer to
   /// [getRedirectResult].
   Future<void> signInWithRedirect(AuthProvider provider) {
-    return _delegate.signInWithRedirect(provider);
+    try {
+      return _delegate.signInWithRedirect(provider);
+    } on FirebaseAuthMultiFactorExceptionPlatform catch (e) {
+      throw FirebaseAuthMultiFactorException._(this, e);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// Signs out the current user.
@@ -665,6 +753,13 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// [phoneNumber] The phone number for the account the user is signing up
   ///   for or signing into. Make sure to pass in a phone number with country
   ///   code prefixed with plus sign ('+').
+  ///   Should be null if it's a multi-factor sign in.
+  ///
+  /// [multiFactorInfo] The multi factor info you're using to verify the phone number.
+  ///   Should be set if a [multiFactorSession] is provided.
+  ///
+  /// [multiFactorSession] The multi factor session you're using to verify the phone number.
+  ///   Should be set if a [multiFactorInfo] is provided.
   ///
   /// [timeout] The maximum amount of time you are willing to wait for SMS
   ///   auto-retrieval to be completed by the library. Maximum allowed value
@@ -689,7 +784,8 @@ class FirebaseAuth extends FirebasePluginPlatform {
   /// [codeAutoRetrievalTimeout] Triggered when SMS auto-retrieval times out and
   ///   provide a [verificationId].
   Future<void> verifyPhoneNumber({
-    required String phoneNumber,
+    String? phoneNumber,
+    PhoneMultiFactorInfo? multiFactorInfo,
     required PhoneVerificationCompleted verificationCompleted,
     required PhoneVerificationFailed verificationFailed,
     required PhoneCodeSent codeSent,
@@ -697,9 +793,15 @@ class FirebaseAuth extends FirebasePluginPlatform {
     @visibleForTesting String? autoRetrievedSmsCodeForTesting,
     Duration timeout = const Duration(seconds: 30),
     int? forceResendingToken,
+    MultiFactorSession? multiFactorSession,
   }) {
+    assert(
+      phoneNumber != null || multiFactorInfo != null,
+      'Either phoneNumber or multiFactorInfo must be provided.',
+    );
     return _delegate.verifyPhoneNumber(
       phoneNumber: phoneNumber,
+      multiFactorInfo: multiFactorInfo,
       timeout: timeout,
       forceResendingToken: forceResendingToken,
       verificationCompleted: verificationCompleted,
@@ -708,7 +810,14 @@ class FirebaseAuth extends FirebasePluginPlatform {
       codeAutoRetrievalTimeout: codeAutoRetrievalTimeout,
       // ignore: invalid_use_of_visible_for_testing_member
       autoRetrievedSmsCodeForTesting: autoRetrievedSmsCodeForTesting,
+      multiFactorSession: multiFactorSession,
     );
+  }
+
+  /// Apple only. Users signed in with Apple provider can revoke their token using an authorization code.
+  /// Authorization code can be retrieved on the user credential i.e. userCredential.additionalUserInfo.authorizationCode
+  Future<void> revokeTokenWithAuthorizationCode(String authorizationCode) {
+    return _delegate.revokeTokenWithAuthorizationCode(authorizationCode);
   }
 
   @override

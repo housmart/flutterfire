@@ -23,21 +23,24 @@ if (flutterVersionName == null) {
 
 apply plugin: 'com.android.application'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+apply plugin: 'com.google.gms.google-services'
 
 android {
-    compileSdkVersion 29
+    namespace 'io.flutter.plugins.firebase.analytics.example'
 
-    lintOptions {
-        disable 'InvalidPackage'
-    }
+    compileSdk 33
 
     defaultConfig {
-        applicationId "io.flutter.plugins.firebaseanalyticsexample"
-        minSdkVersion 16
-        targetSdkVersion 28
+        applicationId "io.flutter.plugins.firebase.analytics.example"
+        minSdk 21
+        targetSdk 33
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
     }
 
     buildTypes {
@@ -58,5 +61,3 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:1.2.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.2.0'
 }
-
-apply plugin: 'com.google.gms.google-services'

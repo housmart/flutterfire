@@ -1,3 +1,7 @@
+// Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 // ignore_for_file: require_trailing_commas
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -26,6 +30,21 @@ class _Permissions extends State<Permissions> {
       carPlay: true,
       criticalAlert: true,
     );
+
+    setState(() {
+      _requested = true;
+      _fetching = false;
+      _settings = settings;
+    });
+  }
+
+  Future<void> checkPermissions() async {
+    setState(() {
+      _fetching = true;
+    });
+
+    NotificationSettings settings =
+        await FirebaseMessaging.instance.getNotificationSettings();
 
     setState(() {
       _requested = true;
@@ -72,7 +91,7 @@ class _Permissions extends State<Permissions> {
         row('Sound', settingsMap[_settings.sound]!),
       ],
       ElevatedButton(
-          onPressed: () => {}, child: const Text('Reload Permissions')),
+          onPressed: checkPermissions, child: const Text('Reload Permissions')),
     ]);
   }
 }

@@ -3,6 +3,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
 
@@ -28,9 +29,9 @@ class ReferenceWeb extends ReferencePlatform {
       : _path = path,
         super(storage, path) {
     if (_path.startsWith(_storageUrlPrefix)) {
-      _ref = storage.webStorage!.refFromURL(_path);
+      _ref = storage.delegate.refFromURL(_path);
     } else {
-      _ref = storage.webStorage!.ref(_path);
+      _ref = storage.delegate.ref(_path);
     }
   }
 
@@ -117,7 +118,7 @@ class ReferenceWeb extends ReferencePlatform {
   Future<Uint8List?> getData(
     int maxSize, {
     @visibleForTesting
-        Future<Uint8List> Function(Uri url) readBytes = http.readBytes,
+    Future<Uint8List> Function(Uri url) readBytes = http.readBytes,
   }) async {
     if (maxSize > 0) {
       final metadata = await getMetadata();
@@ -185,13 +186,21 @@ class ReferenceWeb extends ReferencePlatform {
     PutStringFormat format, [
     SettableMetadata? metadata,
   ]) {
+    dynamic _data = data;
+
+    // The universal package is converting raw to base64, so we need to convert
+    // Any base64 string values into a Uint8List.
+    if (format == PutStringFormat.base64) {
+      _data = base64Decode(data);
+    }
+
     return TaskWeb(
       this,
-      _ref.putString(
-        data,
-        putStringFormatToString(format),
+      _ref.put(
+        _data,
         settableMetadataToFbUploadMetadata(
           _cache.store(metadata),
+          // md5 is computed server-side, so we don't have to unpack a potentially huge Blob.
         ),
       ),
     );

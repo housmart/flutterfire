@@ -43,36 +43,37 @@ void main() {
   final int kMockLastSignInTimestamp =
       DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch;
 
-  Map<String, dynamic> kMockUser = <String, dynamic>{
-    'isAnonymous': true,
-    'emailVerified': false,
-    'displayName': 'displayName',
-    'metadata': <String, int>{
-      'creationTime': kMockCreationTimestamp,
-      'lastSignInTime': kMockLastSignInTimestamp,
-    },
-    'providerData': <Map<String, String>>[
-      <String, String>{
+  final kMockUser = PigeonUserDetails(
+    userInfo: PigeonUserInfo(
+      uid: '12345',
+      displayName: 'displayName',
+      creationTimestamp: kMockCreationTimestamp,
+      lastSignInTimestamp: kMockLastSignInTimestamp,
+      isAnonymous: true,
+      isEmailVerified: false,
+    ),
+    providerData: [
+      {
         'providerId': 'firebase',
         'uid': '12345',
         'displayName': 'Flutter Test User',
-        'photoURL': 'http://www.example.com/',
+        'photoUrl': 'http://www.example.com/',
         'email': 'test@example.com',
-      },
+      }
     ],
-  };
+  );
 
-  MockUserPlatform? mockUserPlatform;
-  MockUserCredentialPlatform? mockUserCredPlatform;
-  MockConfirmationResultPlatform? mockConfirmationResultPlatform;
-  MockRecaptchaVerifier? mockVerifier;
-  AdditionalUserInfo? mockAdditionalUserInfo;
-  EmailAuthCredential? mockCredential;
+  late MockUserPlatform mockUserPlatform;
+  late MockUserCredentialPlatform mockUserCredPlatform;
+  late MockConfirmationResultPlatform mockConfirmationResultPlatform;
+  late MockRecaptchaVerifier mockVerifier;
+  late AdditionalUserInfo mockAdditionalUserInfo;
+  late EmailAuthCredential mockCredential;
 
   MockFirebaseAuth mockAuthPlatform = MockFirebaseAuth();
 
   group('$FirebaseAuth', () {
-    Map<String, dynamic> user;
+    PigeonUserDetails user;
     // used to generate a unique application name for each test
     var testCount = 0;
 
@@ -93,7 +94,8 @@ void main() {
       auth = FirebaseAuth.instanceFor(app: app);
       user = kMockUser;
 
-      mockUserPlatform = MockUserPlatform(mockAuthPlatform, user);
+      mockUserPlatform = MockUserPlatform(
+          mockAuthPlatform, TestMultiFactorPlatform(mockAuthPlatform), user);
       mockConfirmationResultPlatform = MockConfirmationResultPlatform();
       mockAdditionalUserInfo = AdditionalUserInfo(
         isNewUser: false,
@@ -107,14 +109,14 @@ void main() {
       ) as EmailAuthCredential;
       mockUserCredPlatform = MockUserCredentialPlatform(
         FirebaseAuthPlatform.instance,
-        mockAdditionalUserInfo!,
-        mockCredential!,
-        mockUserPlatform!,
+        mockAdditionalUserInfo,
+        mockCredential,
+        mockUserPlatform,
       );
       mockVerifier = MockRecaptchaVerifier();
 
       when(mockAuthPlatform.signInAnonymously())
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithCredential(any)).thenAnswer(
           (_) => Future<UserCredentialPlatform>.value(mockUserCredPlatform));
@@ -136,41 +138,43 @@ void main() {
       )).thenAnswer((_) => mockAuthPlatform);
 
       when(mockAuthPlatform.createUserWithEmailAndPassword(any, any))
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.getRedirectResult())
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithCustomToken(any))
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithEmailAndPassword(any, any))
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithEmailLink(any, any))
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithPhoneNumber(any, any))
-          .thenAnswer((_) async => mockConfirmationResultPlatform!);
+          .thenAnswer((_) async => mockConfirmationResultPlatform);
 
-      when(mockVerifier!.delegate).thenReturn(mockVerifier!.mockDelegate);
+      when(mockVerifier.delegate).thenReturn(mockVerifier.mockDelegate);
 
       when(mockAuthPlatform.signInWithPopup(any))
-          .thenAnswer((_) async => mockUserCredPlatform!);
+          .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.signInWithRedirect(any))
           .thenAnswer((_) async => mockUserCredPlatform);
 
       when(mockAuthPlatform.authStateChanges()).thenAnswer((_) =>
-          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform!]));
+          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform]));
 
       when(mockAuthPlatform.idTokenChanges()).thenAnswer((_) =>
-          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform!]));
+          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform]));
 
       when(mockAuthPlatform.userChanges()).thenAnswer((_) =>
-          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform!]));
+          Stream<UserPlatform>.fromIterable(<UserPlatform>[mockUserPlatform]));
 
-      MethodChannelFirebaseAuth.channel.setMockMethodCallHandler((call) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(MethodChannelFirebaseAuth.channel,
+              (call) async {
         return <String, dynamic>{'user': user};
       });
     });
@@ -244,8 +248,12 @@ void main() {
     group('checkActionCode()', () {
       test('should call delegate method', () async {
         // Necessary as we otherwise get a "null is not a Future<void>" error
-        when(mockAuthPlatform.checkActionCode(any))
-            .thenAnswer((i) async => ActionCodeInfo(data: {}, operation: 0));
+        when(mockAuthPlatform.checkActionCode(any)).thenAnswer(
+          (i) async => ActionCodeInfo(
+            data: ActionCodeInfoData(email: null, previousEmail: null),
+            operation: ActionCodeInfoOperation.unknown,
+          ),
+        );
 
         await auth.checkActionCode(kMockActionCode);
         verify(mockAuthPlatform.checkActionCode(kMockActionCode));
@@ -374,7 +382,7 @@ void main() {
         final ActionCodeSettings kMockActionCodeSettingsNull =
             ActionCodeSettings(url: kMockURL);
         final ActionCodeSettings kMockActionCodeSettingsFalse =
-            ActionCodeSettings(url: kMockURL, handleCodeInApp: false);
+            ActionCodeSettings(url: kMockURL);
 
         // when handleCodeInApp is null
         expect(
@@ -727,7 +735,8 @@ class MockFirebaseAuth extends Mock
   }
 
   @override
-  FirebaseAuthPlatform delegateFor({FirebaseApp? app}) {
+  FirebaseAuthPlatform delegateFor(
+      {FirebaseApp? app, Persistence? persistence}) {
     return super.noSuchMethod(
       Invocation.method(#delegateFor, [], {#app: app}),
       returnValue: TestFirebaseAuthPlatform(),
@@ -836,7 +845,7 @@ class MockFirebaseAuth extends Mock
 
   @override
   FirebaseAuthPlatform setInitialValues({
-    Map<String, dynamic>? currentUser,
+    PigeonUserDetails? currentUser,
     String? languageCode,
   }) {
     return super.noSuchMethod(
@@ -987,6 +996,8 @@ class MockFirebaseAuth extends Mock
   @override
   Future<void> verifyPhoneNumber({
     String? phoneNumber,
+    PhoneMultiFactorInfo? multiFactorInfo,
+    MultiFactorSession? multiFactorSession,
     Object? verificationCompleted,
     Object? verificationFailed,
     Object? codeSent,
@@ -1021,13 +1032,14 @@ class FakeFirebaseAuthPlatform extends Fake
   String? tenantId;
 
   @override
-  FirebaseAuthPlatform delegateFor({required FirebaseApp app}) {
+  FirebaseAuthPlatform delegateFor(
+      {required FirebaseApp app, Persistence? persistence}) {
     return this;
   }
 
   @override
   FirebaseAuthPlatform setInitialValues({
-    Map<String, dynamic>? currentUser,
+    PigeonUserDetails? currentUser,
     String? languageCode,
   }) {
     return this;
@@ -1037,8 +1049,9 @@ class FakeFirebaseAuthPlatform extends Fake
 class MockUserPlatform extends Mock
     with MockPlatformInterfaceMixin
     implements TestUserPlatform {
-  MockUserPlatform(FirebaseAuthPlatform auth, Map<String, dynamic> _user) {
-    TestUserPlatform(auth, _user);
+  MockUserPlatform(FirebaseAuthPlatform auth, MultiFactorPlatform multiFactor,
+      PigeonUserDetails _user) {
+    TestUserPlatform(auth, multiFactor, _user);
   }
 }
 
@@ -1081,13 +1094,14 @@ class TestFirebaseAuthPlatform extends FirebaseAuthPlatform {
   }) {}
 
   @override
-  FirebaseAuthPlatform delegateFor({FirebaseApp? app}) {
+  FirebaseAuthPlatform delegateFor(
+      {FirebaseApp? app, Persistence? persistence}) {
     return this;
   }
 
   @override
   FirebaseAuthPlatform setInitialValues({
-    Map<String, dynamic>? currentUser,
+    PigeonUserDetails? currentUser,
     String? languageCode,
   }) {
     return this;
@@ -1155,8 +1169,13 @@ class TestAuthProvider extends AuthProvider {
 }
 
 class TestUserPlatform extends UserPlatform {
-  TestUserPlatform(FirebaseAuthPlatform auth, Map<String, dynamic> data)
-      : super(auth, data);
+  TestUserPlatform(FirebaseAuthPlatform auth, MultiFactorPlatform multiFactor,
+      PigeonUserDetails data)
+      : super(auth, multiFactor, data);
+}
+
+class TestMultiFactorPlatform extends MultiFactorPlatform {
+  TestMultiFactorPlatform(FirebaseAuthPlatform auth) : super(auth);
 }
 
 class TestUserCredentialPlatform extends UserCredentialPlatform {

@@ -16,8 +16,12 @@ part of cloud_firestore;
 /// FirebaseFirestore firestore = FirebaseFirestore.instanceFor(app: secondaryApp);
 /// ```
 class FirebaseFirestore extends FirebasePluginPlatform {
-  FirebaseFirestore._({required this.app})
-      : super(app.name, 'plugins.flutter.io/firebase_firestore');
+  FirebaseFirestore._({required this.app, required this.databaseURL})
+      : super(app.name, 'plugins.flutter.io/firebase_firestore') {
+    if (databaseURL.endsWith('/')) {
+      databaseURL = databaseURL.substring(0, databaseURL.length - 1);
+    }
+  }
 
   static final Map<String, FirebaseFirestore> _cachedInstances = {};
 
@@ -29,13 +33,19 @@ class FirebaseFirestore extends FirebasePluginPlatform {
   }
 
   /// Returns an instance using a specified [FirebaseApp].
-  static FirebaseFirestore instanceFor({required FirebaseApp app}) {
-    if (_cachedInstances.containsKey(app.name)) {
-      return _cachedInstances[app.name]!;
+  static FirebaseFirestore instanceFor({
+    required FirebaseApp app,
+    String? databaseURL,
+  }) {
+    String url = databaseURL ?? '(default)';
+    String cacheKey = '${app.name}|$url';
+    if (_cachedInstances.containsKey(cacheKey)) {
+      return _cachedInstances[cacheKey]!;
     }
 
-    FirebaseFirestore newInstance = FirebaseFirestore._(app: app);
-    _cachedInstances[app.name] = newInstance;
+    FirebaseFirestore newInstance =
+        FirebaseFirestore._(app: app, databaseURL: url);
+    _cachedInstances[cacheKey] = newInstance;
 
     return newInstance;
   }
@@ -46,12 +56,17 @@ class FirebaseFirestore extends FirebasePluginPlatform {
   FirebaseFirestorePlatform? _delegatePackingProperty;
 
   FirebaseFirestorePlatform get _delegate {
-    return _delegatePackingProperty ??=
-        FirebaseFirestorePlatform.instanceFor(app: app);
+    return _delegatePackingProperty ??= FirebaseFirestorePlatform.instanceFor(
+      app: app,
+      databaseURL: databaseURL,
+    );
   }
 
   /// The [FirebaseApp] for this current [FirebaseFirestore] instance.
   FirebaseApp app;
+
+  /// Firestore Database URL for this instance. Falls back to default database: "(default)"
+  String databaseURL;
 
   /// Gets a [CollectionReference] for the specified Firestore path.
   CollectionReference<Map<String, dynamic>> collection(String collectionPath) {
@@ -85,9 +100,10 @@ class FirebaseFirestore extends FirebasePluginPlatform {
     return _delegate.clearPersistence();
   }
 
-  /// Enable persistence of Firestore data.
-  ///
-  /// This is a web-only method. Use [Settings.persistenceEnabled] for non-web platforms.
+  /// Enable persistence of Firestore data for web-only. Use [Settings.persistenceEnabled] for non-web platforms.
+  /// If `enablePersistence()` is not called, it defaults to Memory cache.
+  /// If `enablePersistence(const PersistenceSettings(synchronizeTabs: false))` is called, it persists data for a single browser tab.
+  /// If `enablePersistence(const PersistenceSettings(synchronizeTabs: true))` is called, it persists data across multiple browser tabs.
   Future<void> enablePersistence([
     PersistenceSettings? persistenceSettings,
   ]) async {
@@ -108,7 +124,18 @@ class FirebaseFirestore extends FirebasePluginPlatform {
   void useFirestoreEmulator(String host, int port, {bool sslEnabled = false}) {
     if (kIsWeb) {
       // use useEmulator() API for web as settings are set immediately unlike native platforms
-      _delegate.useEmulator(host, port);
+      try {
+        _delegate.useEmulator(host, port);
+      } catch (e) {
+        // We convert to string to be compatible with Flutter <= 3.7 and Flutter >= 3.10
+        // .code is only available in Flutter <= 3.7
+        String strError = e.toString();
+
+        // this catches FirebaseError from web that occurs after hot reloading & hot restarting
+        if (!strError.contains('failed-precondition')) {
+          rethrow;
+        }
+      }
     } else {
       String mappedHost = host;
       // Android considers localhost as 10.0.2.2 - automatically handle this for users.
@@ -126,6 +153,18 @@ class FirebaseFirestore extends FirebasePluginPlatform {
         host: '$mappedHost:$port',
       );
     }
+  }
+
+  /// Performs a [namedQueryGet] and decode the result using [Query.withConverter].
+  Future<QuerySnapshot<T>> namedQueryWithConverterGet<T>(
+    String name, {
+    GetOptions options = const GetOptions(),
+    required FromFirestore<T> fromFirestore,
+    required ToFirestore<T> toFirestore,
+  }) async {
+    final snapshot = await namedQueryGet(name, options: options);
+
+    return _WithConverterQuerySnapshot<T>(snapshot, fromFirestore, toFirestore);
   }
 
   /// Reads a [QuerySnapshot] if a namedQuery has been retrieved and passed as a [Buffer] to [loadBundle()]. To read from cache, pass [GetOptions.source] value as [Source.cache].
@@ -187,7 +226,7 @@ class FirebaseFirestore extends FirebasePluginPlatform {
   }
 
   /// Returns a [Stream] which is called each time all of the active listeners
-  /// have been synchronised.
+  /// have been synchronized.
   Stream<void> snapshotsInSync() {
     return _delegate.snapshotsInSync();
   }
@@ -213,9 +252,13 @@ class FirebaseFirestore extends FirebasePluginPlatform {
   ///
   /// By default transactions are limited to 30 seconds of execution time. This
   /// timeout can be adjusted by setting the timeout parameter.
+  ///
+  /// By default transactions will retry 5 times. You can change the number of attemps
+  /// with [maxAttempts]. Attempts should be at least 1.
   Future<T> runTransaction<T>(
     TransactionHandler<T> transactionHandler, {
     Duration timeout = const Duration(seconds: 30),
+    int maxAttempts = 5,
   }) async {
     late T output;
     await _delegate.runTransaction(
@@ -223,6 +266,7 @@ class FirebaseFirestore extends FirebasePluginPlatform {
         output = await transactionHandler(Transaction._(this, transaction));
       },
       timeout: timeout,
+      maxAttempts: maxAttempts,
     );
 
     return output;
@@ -277,6 +321,48 @@ class FirebaseFirestore extends FirebasePluginPlatform {
     return _delegate.waitForPendingWrites();
   }
 
+  /// Configures indexing for local query execution. Any previous index configuration is overridden.
+  ///
+  /// The index entries themselves are created asynchronously. You can continue to use queries that
+  /// require indexing even if the indices are not yet available. Query execution will automatically
+  /// start using the index once the index entries have been written.
+  ///
+  /// This API is in preview mode and is subject to change.
+  @experimental
+  Future<void> setIndexConfiguration({
+    required List<Index> indexes,
+    List<FieldOverrides>? fieldOverrides,
+  }) async {
+    String json = jsonEncode(
+      {
+        'indexes': indexes.map((index) => index.toMap()).toList(),
+        'fieldOverrides':
+            fieldOverrides?.map((index) => index.toMap()).toList() ?? [],
+      },
+    );
+
+    return _delegate.setIndexConfiguration(json);
+  }
+
+  /// Configures indexing for local query execution. Any previous index configuration is overridden.
+  ///
+  /// The index entries themselves are created asynchronously. You can continue to use queries that
+  /// require indexing even if the indices are not yet available. Query execution will automatically
+  /// start using the index once the index entries have been written.
+  /// See Firebase documentation to learn how to configure your index configuration JSON file:
+  /// https://firebase.google.com/docs/reference/firestore/indexes
+  ///
+  /// This API is in preview mode and is subject to change.
+  @experimental
+  Future<void> setIndexConfigurationFromJSON(String json) async {
+    return _delegate.setIndexConfiguration(json);
+  }
+
+  /// Globally enables / disables Cloud Firestore logging for the SDK.
+  static Future<void> setLoggingEnabled(bool enabled) {
+    return FirebaseFirestorePlatform.instance.setLoggingEnabled(enabled);
+  }
+
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
   bool operator ==(Object other) =>
@@ -284,7 +370,7 @@ class FirebaseFirestore extends FirebasePluginPlatform {
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => hashValues(app.name, app.options);
+  int get hashCode => Object.hash(app.name, app.options);
 
   @override
   String toString() => '$FirebaseFirestore(app: ${app.name})';

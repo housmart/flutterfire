@@ -9,6 +9,10 @@ service cloud.firestore {
     	allow read, write: if true;
     }
 
+    match /{path=**}/collection-group/{subId} {
+      allow read, write: if true;
+    }
+
     match /firestore-bundle-tests/{document=**} {
     	allow read, write: if true;
     }
@@ -17,7 +21,19 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /{path=**}/aggregate-group-count/{documentId} {
+          allow read, write: if true;
+    }
+
     match /flutter-tests/{testid}/group-test/{docid} {
+      allow read, write: if true;
+    }
+
+    match /firestore-example-app/{document=**} {
+      allow read, write: if true;
+    }
+
+    match /root/{document=**} {
       allow read, write: if true;
     }
   }

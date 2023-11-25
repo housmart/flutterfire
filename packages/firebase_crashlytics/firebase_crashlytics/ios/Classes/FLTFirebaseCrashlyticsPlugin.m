@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #import "FLTFirebaseCrashlyticsPlugin.h"
+#import "Crashlytics_Platform.h"
+#import "ExceptionModel_Platform.h"
 
 #import <Firebase/Firebase.h>
 
@@ -68,6 +70,9 @@ NSString *const kCrashlyticsArgumentDidCrashOnPreviousExecution = @"didCrashOnPr
     instance = [[FLTFirebaseCrashlyticsPlugin alloc] init];
     // Register with the Flutter Firebase plugin registry.
     [[FLTFirebasePluginRegistry sharedInstance] registerFirebasePlugin:instance];
+    [[FIRCrashlytics crashlytics] setDevelopmentPlatformName:@"Flutter"];
+    // We can't currently get the Flutter plugin version number, so use -1.
+    [[FIRCrashlytics crashlytics] setDevelopmentPlatformVersion:@"-1"];
   });
 
   return instance;
@@ -156,12 +161,6 @@ NSString *const kCrashlyticsArgumentDidCrashOnPreviousExecution = @"didCrashOnPr
     NSTimeInterval timeInterval = [NSDate date].timeIntervalSince1970;
     [[FIRCrashlytics crashlytics] setCustomValue:@(llrint(timeInterval))
                                           forKey:@"com.firebase.crashlytics.flutter.fatal"];
-#if TARGET_OS_OSX
-    // macOS platform does not support analytics
-#else
-    id<FIRAnalyticsInterop> analytics = [[FIRCrashlytics crashlytics].analyticsManager analytics];
-    [FIRCLSAnalyticsManager logCrashWithTimeStamp:timeInterval toAnalytics:analytics];
-#endif
   }
 
   // Log additional custom value to match Android.
@@ -172,7 +171,13 @@ NSString *const kCrashlyticsArgumentDidCrashOnPreviousExecution = @"didCrashOnPr
                                                                     reason:reason];
 
   exception.stackTrace = frames;
-  [[FIRCrashlytics crashlytics] recordExceptionModel:exception];
+  exception.onDemand = YES;
+  exception.isFatal = fatal;
+  if (fatal) {
+    [[FIRCrashlytics crashlytics] recordOnDemandExceptionModel:exception];
+  } else {
+    [[FIRCrashlytics crashlytics] recordExceptionModel:exception];
+  }
   result.success(nil);
 }
 

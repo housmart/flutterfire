@@ -3,13 +3,13 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'package:cloud_firestore_platform_interface/cloud_firestore_platform_interface.dart';
 import 'package:firebase_core_web/firebase_core_web_interop.dart'
     as core_interop;
 import 'package:js/js.dart';
 import 'package:js/js_util.dart' as util;
 
 import '../firestore.dart';
-import '../firestore_interop.dart' hide FieldValue;
 
 /// Returns Dart representation from JS Object.
 dynamic dartify(Object? jsObject) {
@@ -24,11 +24,10 @@ dynamic dartify(Object? jsObject) {
       return object;
     }
     if (util.instanceof(object, TimestampJsConstructor)) {
-      return DateTime.fromMillisecondsSinceEpoch(
-          (object as TimestampJsImpl).toMillis());
+      return Timestamp((object as TimestampJsImpl).seconds, object.nanoseconds);
     }
-    if (util.instanceof(object, BlobConstructor)) {
-      return object as BlobJsImpl;
+    if (util.instanceof(object, BytesConstructor)) {
+      return object as BytesJsImpl;
     }
     return null;
   });
@@ -45,6 +44,10 @@ dynamic jsify(Object? dartObject) {
       return TimestampJsImpl.fromMillis(object.millisecondsSinceEpoch);
     }
 
+    if (object is Timestamp) {
+      return TimestampJsImpl.fromMillis(object.millisecondsSinceEpoch);
+    }
+
     if (object is DocumentReference) {
       return object.jsObject;
     }
@@ -53,7 +56,7 @@ dynamic jsify(Object? dartObject) {
       return jsifyFieldValue(object);
     }
 
-    if (object is BlobJsImpl) {
+    if (object is BytesJsImpl) {
       return object;
     }
 

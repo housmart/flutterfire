@@ -4,6 +4,7 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'package:firebase_storage_platform_interface/firebase_storage_platform_interface.dart';
+
 import '../interop/storage.dart' as storage_interop;
 
 /// Converts FullMetadata coming from the JS Interop layer to FullMetadata for the plugin.
@@ -23,8 +24,8 @@ FullMetadata fbFullMetadataToFullMetadata(
     'metageneration': metadata.metageneration,
     'name': metadata.name,
     'size': metadata.size,
-    'creationTimeMillis': metadata.timeCreated!.millisecondsSinceEpoch,
-    'updatedTimeMillis': metadata.updated!.millisecondsSinceEpoch,
+    'creationTimeMillis': metadata.timeCreated?.millisecondsSinceEpoch,
+    'updatedTimeMillis': metadata.updated?.millisecondsSinceEpoch,
   });
 }
 

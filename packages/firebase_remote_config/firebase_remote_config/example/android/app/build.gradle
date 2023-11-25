@@ -22,22 +22,27 @@ if (flutterVersionName == null) {
 }
 
 apply plugin: 'com.android.application'
-apply plugin: 'com.google.gms.google-services'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-  compileSdkVersion 29
+  namespace 'io.flutter.plugins.firebase.remoteconfig.example'
+
+  compileSdk 33
+
+  defaultConfig {
+    applicationId "io.flutter.plugins.firebase.remoteconfig.example"
+    minSdk 21
+    targetSdk 33
+    versionCode flutterVersionCode.toInteger()
+    versionName flutterVersionName
+  }
+
+  buildFeatures {
+    buildConfig = true
+  }
 
   lintOptions {
     disable 'InvalidPackage'
-  }
-
-  defaultConfig {
-    applicationId "io.flutter.plugins.firebase.firebaseremoteconfigexample"
-    minSdkVersion 16
-    targetSdkVersion 29
-    versionCode flutterVersionCode.toInteger()
-    versionName flutterVersionName
   }
 
   buildTypes {

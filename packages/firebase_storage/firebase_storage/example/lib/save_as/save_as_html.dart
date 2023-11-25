@@ -1,5 +1,6 @@
-// ignore_for_file: require_trailing_commas
-// @dart=2.9
+// Copyright 2022, the Chromium project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
 
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html';
@@ -11,14 +12,14 @@ Element _ensureInitialized(String id) {
   if (target == null) {
     final Element targetElement = Element.tag('flt-x-file')..id = id;
 
-    querySelector('body').children.add(targetElement);
+    querySelector('body')?.children.add(targetElement);
     target = targetElement;
   }
   return target;
 }
 
 AnchorElement _createAnchorElement(String href, String suggestedName) {
-  return AnchorElement(href: href)..download = suggestedName ?? 'download';
+  return AnchorElement(href: href)..download = suggestedName;
 }
 
 /// Add an element to a container and click it

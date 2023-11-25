@@ -7,7 +7,6 @@ import 'dart:async';
 import 'dart:js_util' as util;
 
 import 'package:cloud_functions_platform_interface/cloud_functions_platform_interface.dart';
-import 'package:firebase_core_web/firebase_core_web_interop.dart' show dartify;
 
 import 'interop/functions.dart' as functions_interop;
 import 'utils.dart';
@@ -16,36 +15,47 @@ import 'utils.dart';
 class HttpsCallableWeb extends HttpsCallablePlatform {
   /// Constructor.
   HttpsCallableWeb(FirebaseFunctionsPlatform functions, this._webFunctions,
-      String? origin, String name, HttpsCallableOptions options)
-      : super(functions, origin, name, options);
+      String? origin, String? name, HttpsCallableOptions options, Uri? uri)
+      : super(functions, origin, name, options, uri);
 
   final functions_interop.Functions _webFunctions;
 
   @override
   Future<dynamic> call([dynamic parameters]) async {
     if (origin != null) {
-      _webFunctions.useFunctionsEmulator(origin!);
+      final uri = Uri.parse(origin!);
+
+      _webFunctions.useFunctionsEmulator(uri.host, uri.port);
     }
 
     functions_interop.HttpsCallableOptions callableOptions =
         functions_interop.HttpsCallableOptions(
-            timeout: options.timeout.inMilliseconds);
+      timeout: options.timeout.inMilliseconds,
+      limitedUseAppCheckTokens: options.limitedUseAppCheckToken,
+    );
 
-    functions_interop.HttpsCallable callable =
-        _webFunctions.httpsCallable(name, callableOptions);
+    late functions_interop.HttpsCallable callable;
 
-    Object response;
+    if (name != null) {
+      callable = _webFunctions.httpsCallable(name!, callableOptions);
+    } else if (uri != null) {
+      callable = _webFunctions.httpsCallableUri(uri!, callableOptions);
+    } else {
+      throw ArgumentError('Either name or uri must be provided');
+    }
+
+    functions_interop.HttpsCallableResult response;
     var input = parameters;
     if ((input is Map) || (input is Iterable)) {
       input = util.jsify(parameters);
     }
-    var jsPromise = callable.jsObject.call(input);
+
     try {
-      response = await util.promiseToFuture(jsPromise);
+      response = await callable.call(input);
     } catch (e, s) {
       throw convertFirebaseFunctionsException(e, s);
     }
 
-    return dartify(util.getProperty(response, 'data'));
+    return response.data;
   }
 }

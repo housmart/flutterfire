@@ -4,53 +4,64 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:js';
 
 import 'package:firebase_auth_platform_interface/firebase_auth_platform_interface.dart';
 import 'package:firebase_auth_web/src/firebase_auth_web_user_credential.dart';
-import 'package:intl/intl.dart';
 
 import 'firebase_auth_web_confirmation_result.dart';
 import 'interop/auth.dart' as auth_interop;
 import 'utils/web_utils.dart';
 
-/// The format of an incoming metadata string timestamp from the firebase-dart library
-final DateFormat _dateFormat = DateFormat('EEE, d MMM yyyy HH:mm:ss', 'en_US');
-
 /// Web delegate implementation of [UserPlatform].
 class UserWeb extends UserPlatform {
   /// Creates a new [UserWeb] instance.
-  UserWeb(FirebaseAuthPlatform auth, this._webUser)
-      : super(auth, {
-          'displayName': _webUser.displayName,
-          'email': _webUser.email,
-          'emailVerified': _webUser.emailVerified,
-          'isAnonymous': _webUser.isAnonymous,
-          'metadata': <String, int>{
-            'creationTime': _dateFormat
-                .parse(_webUser.metadata.creationTime)
-                .millisecondsSinceEpoch,
-            'lastSignInTime': _dateFormat
-                .parse(_webUser.metadata.lastSignInTime)
-                .millisecondsSinceEpoch,
-          },
-          'phoneNumber': _webUser.phoneNumber,
-          'photoURL': _webUser.photoURL,
-          'providerData': _webUser.providerData
-              .map((auth_interop.UserInfo webUserInfo) => <String, dynamic>{
-                    'displayName': webUserInfo.displayName,
-                    'email': webUserInfo.email,
-                    'phoneNumber': webUserInfo.phoneNumber,
-                    'providerId': webUserInfo.providerId,
-                    'photoURL': webUserInfo.photoURL,
-                    'uid': webUserInfo.uid,
-                  })
-              .toList(),
-          'refreshToken': _webUser.refreshToken,
-          'tenantId': _webUser.tenantId,
-          'uid': _webUser.uid,
-        });
+  UserWeb(
+    FirebaseAuthPlatform auth,
+    MultiFactorPlatform multiFactor,
+    this._webUser,
+    this._webAuth,
+  ) : super(
+          auth,
+          multiFactor,
+          PigeonUserDetails(
+              userInfo: PigeonUserInfo(
+                displayName: _webUser.displayName,
+                email: _webUser.email,
+                isEmailVerified: _webUser.emailVerified,
+                isAnonymous: _webUser.isAnonymous,
+                creationTimestamp: _webUser.metadata.creationTime != null
+                    ? context['Date']
+                        .callMethod('parse', [_webUser.metadata.creationTime])
+                    : null,
+                lastSignInTimestamp: _webUser.metadata.lastSignInTime != null
+                    ? context['Date']
+                        .callMethod('parse', [_webUser.metadata.lastSignInTime])
+                    : null,
+                phoneNumber: _webUser.phoneNumber,
+                photoUrl: _webUser.photoURL,
+                refreshToken: _webUser.refreshToken,
+                tenantId: _webUser.tenantId,
+                uid: _webUser.uid,
+              ),
+              providerData: _webUser.providerData
+                  .map((auth_interop.UserInfo webUserInfo) => <String, dynamic>{
+                        'displayName': webUserInfo.displayName,
+                        'email': webUserInfo.email,
+                        // isAnonymous is always false for providerData
+                        'isAnonymous': false,
+                        // isEmailVerified is always true for providerData
+                        'isEmailVerified': true,
+                        'phoneNumber': webUserInfo.phoneNumber,
+                        'providerId': webUserInfo.providerId,
+                        'photoUrl': webUserInfo.photoURL,
+                        'uid': webUserInfo.uid,
+                      })
+                  .toList()),
+        );
 
   final auth_interop.User _webUser;
+  final auth_interop.Auth? _webAuth;
 
   @override
   Future<void> delete() async {
@@ -86,11 +97,13 @@ class UserWeb extends UserPlatform {
     _assertIsSignedOut(auth);
     try {
       return UserCredentialWeb(
-          auth,
-          await _webUser
-              .linkWithCredential(convertPlatformCredential(credential)));
+        auth,
+        await _webUser
+            .linkWithCredential(convertPlatformCredential(credential)),
+        _webAuth,
+      );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -98,10 +111,22 @@ class UserWeb extends UserPlatform {
   Future<UserCredentialPlatform> linkWithPopup(AuthProvider provider) async {
     _assertIsSignedOut(auth);
     try {
-      return UserCredentialWeb(auth,
-          await _webUser.linkWithPopup(convertPlatformAuthProvider(provider)));
+      return UserCredentialWeb(
+        auth,
+        await _webUser.linkWithPopup(convertPlatformAuthProvider(provider)),
+        _webAuth,
+      );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
+    }
+  }
+
+  @override
+  Future<void> linkWithRedirect(AuthProvider provider) async {
+    try {
+      return _webUser.linkWithRedirect(convertPlatformAuthProvider(provider));
+    } catch (e) {
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -118,9 +143,10 @@ class UserWeb extends UserPlatform {
       return ConfirmationResultWeb(
         auth,
         await _webUser.linkWithPhoneNumber(phoneNumber, verifier),
+        _webAuth,
       );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -131,7 +157,31 @@ class UserWeb extends UserPlatform {
     try {
       auth_interop.UserCredential userCredential = await _webUser
           .reauthenticateWithCredential(convertPlatformCredential(credential)!);
-      return UserCredentialWeb(auth, userCredential);
+      return UserCredentialWeb(auth, userCredential, _webAuth);
+    } catch (e) {
+      throw getFirebaseAuthException(e, _webAuth);
+    }
+  }
+
+  @override
+  Future<UserCredentialPlatform> reauthenticateWithPopup(
+      AuthProvider provider) async {
+    _assertIsSignedOut(auth);
+    try {
+      auth_interop.UserCredential userCredential = await _webUser
+          .reauthenticateWithPopup(convertPlatformAuthProvider(provider));
+      return UserCredentialWeb(auth, userCredential, _webAuth);
+    } catch (e) {
+      throw getFirebaseAuthException(e, _webAuth);
+    }
+  }
+
+  @override
+  Future<void> reauthenticateWithRedirect(AuthProvider provider) async {
+    _assertIsSignedOut(auth);
+    try {
+      return _webUser
+          .reauthenticateWithRedirect(convertPlatformAuthProvider(provider));
     } catch (e) {
       throw getFirebaseAuthException(e);
     }
@@ -145,7 +195,7 @@ class UserWeb extends UserPlatform {
       await _webUser.reload();
       auth.sendAuthChangesEvent(auth.app.name, auth.currentUser);
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -158,7 +208,7 @@ class UserWeb extends UserPlatform {
         convertPlatformActionCodeSettings(actionCodeSettings),
       );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -167,9 +217,14 @@ class UserWeb extends UserPlatform {
     _assertIsSignedOut(auth);
 
     try {
-      return UserWeb(auth, await _webUser.unlink(providerId));
+      return UserWeb(
+        auth,
+        multiFactor,
+        await _webUser.unlink(providerId),
+        _webAuth,
+      );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -182,7 +237,7 @@ class UserWeb extends UserPlatform {
       await _webUser.reload();
       auth.sendAuthChangesEvent(auth.app.name, auth.currentUser);
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -195,7 +250,7 @@ class UserWeb extends UserPlatform {
       await _webUser.reload();
       auth.sendAuthChangesEvent(auth.app.name, auth.currentUser);
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -209,7 +264,7 @@ class UserWeb extends UserPlatform {
       await _webUser.reload();
       auth.sendAuthChangesEvent(auth.app.name, auth.currentUser);
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -240,7 +295,7 @@ class UserWeb extends UserPlatform {
       await _webUser.reload();
       auth.sendAuthChangesEvent(auth.app.name, auth.currentUser);
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 
@@ -256,7 +311,7 @@ class UserWeb extends UserPlatform {
         convertPlatformActionCodeSettings(actionCodeSettings),
       );
     } catch (e) {
-      throw getFirebaseAuthException(e);
+      throw getFirebaseAuthException(e, _webAuth);
     }
   }
 }
